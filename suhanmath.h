@@ -6,6 +6,7 @@
 
 namespace SuhanMath{
 
+const double PI = 3.1415926535897932384626433832795;
 
 /**
  * @brief max
@@ -14,7 +15,7 @@ namespace SuhanMath{
  * @bug int, long, double, char만 사용 가능 unsigned char, float 등 사용시 오류 발생(Qt5.2 기준)
  */
 template <class T>
-T max(int count, ...)
+T Max(int count, ...)
 {
     T max = 0;
     int i;
@@ -41,7 +42,7 @@ T max(int count, ...)
  * @bug int, long, double, char만 사용 가능 unsigned char, float 등 사용시 오류 발생(Qt5.2 기준)
  */
 template <class T>
-T min(int count, ...)
+T Min(int count, ...)
 {
     T min;
     int i;
@@ -60,6 +61,13 @@ T min(int count, ...)
     }
     va_end(ap);
     return min;
+}
+
+
+template <class T>
+T Square(T value)
+{
+    return (value * value);
 }
 
 }
