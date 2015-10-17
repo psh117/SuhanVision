@@ -2,7 +2,7 @@
 #define SUHANMATH_H
 
 #include <cstdarg>
-
+#include <cstdlib>
 
 namespace SuhanMath{
 
@@ -70,8 +70,205 @@ T Square(T value)
     return (value * value);
 }
 
+
+
+template <class T>
+class SHArray
+{
+public:
+    SHArray() : pData(NULL), nDataLength(0) {}
+    SHArray(const SHArray& ref) : pData(NULL)
+    { *this = ref; }
+
+    SHArray(int nSize) : pData(NULL), nDataLength(nSize)
+    { Create(nSize); }
+
+    virtual ~SHArray()
+    {
+        if(pData != NULL)
+            delete pData;
+    }
+    void Create(int nSize)
+    {
+        if(pData != NULL)
+            delete pData;
+        nDataLength = nSize;
+        pData = new T[nSize];
+        for(int i=0; i<nSize;i++)
+        {
+            pData[i] = 0;
+        }
+    }
+    void Reset() { if(pData != NULL) delete pData; nDataLength = 0; }
+
+    // getter
+    int Length() const { return nDataLength; }
+
+    // opeartor overloading
+    SHArray&    operator  =(const SHArray& ref)
+    {
+        Create(ref.Length());
+        for(int i=0; i<nDataLength; i++)
+        {
+            pData[i] = ref[i];
+        }
+    }
+
+
+    SHArray&    operator +=(const SHArray& ref)
+    {
+        for(int i=0; i<nDataLength; i++)
+        {
+            pData[i] += ref[i];
+        }
+        return *this;
+    }
+
+    SHArray&    operator -=(const SHArray& ref)
+    {
+        for(int i=0; i<nDataLength; i++)
+        {
+            pData[i] -= ref[i];
+        }
+        return *this;
+    }
+    SHArray&    operator *=(const SHArray& ref)
+    {
+        for(int i=0; i<nDataLength; i++)
+        {
+            pData[i] *= ref[i];
+        }
+        return *this;
+    }
+
+    SHArray&    operator /=(const SHArray& ref)
+    {
+        for(int i=0; i<nDataLength; i++)
+        {
+            pData[i] /= ref[i];
+        }
+        return *this;
+    }
+
+    SHArray&    operator +=(const T& ref)
+    {
+        for(int i=0; i<nDataLength; i++)
+        {
+            pData[i] += ref;
+        }
+        return *this;
+    }
+    SHArray&    operator -=(const T& ref)
+    {
+        for(int i=0; i<nDataLength; i++)
+        {
+            pData[i] -= ref;
+        }
+        return *this;
+    }
+    SHArray&    operator *=(const T& ref)
+    {
+        for(int i=0; i<nDataLength; i++)
+        {
+            pData[i] *= ref;
+        }
+        return *this;
+    }
+    SHArray&    operator /=(const T& ref)
+    {
+        for(int i=0; i<nDataLength; i++)
+        {
+            pData[i] /= ref;
+        }
+        return *this;
+    }
+
+    SHArray     operator  +(const SHArray& ref) const
+    {
+        SHArray dst(*this);
+        for(int i=0; i<nDataLength; i++)
+        {
+            dst[i] += ref[i];
+        }
+        return dst;
+    }
+    SHArray     operator  +(const T& ref) const
+    {
+        SHArray dst(*this);
+        for(int i=0; i<nDataLength; i++)
+        {
+            dst[i] += ref;
+        }
+        return dst;
+    }
+
+    SHArray     operator  -(const SHArray& ref) const
+    {
+        SHArray dst(*this);
+        for(int i=0; i<nDataLength; i++)
+        {
+            dst[i] -= ref[i];
+        }
+        return dst;
+    }
+    SHArray     operator  -(const T& ref) const
+    {
+        SHArray dst(*this);
+        for(int i=0; i<nDataLength; i++)
+        {
+            dst[i] -= ref;
+        }
+        return dst;
+    }
+    SHArray     operator  *(const T& ref) const
+    {
+        SHArray dst(*this);
+        for(int i=0; i<nDataLength; i++)
+        {
+            dst[i] *= ref;
+        }
+        return dst;
+    }
+
+    SHArray     operator  /(const T& ref) const
+    {
+        SHArray dst(*this);
+        for(int i=0; i<nDataLength; i++)
+        {
+            dst[i] /= ref;
+        }
+        return dst;
+    }
+    bool operator ==(const SHArray& ref) const
+    {
+        for(int i=0; i<nDataLength; i++)
+        {
+            if(pData[i] != ref[i]) return false;
+        }
+        return true;
+    }
+
+    T& operator [] (const int& i) { return pData[i]; }
+    T& operator [] (const int& i) const { return pData[i]; }
+
+protected:
+    T* pData;
+    int nDataLength;
+};
+
+template <class T>
+class SHMatrix : public SHArray<T>
+{
+public:
+    SHMatrix(int row, int col) : SHArray<T>(row*col), nRow(row), nCol(col) {}
+    T& at(int row, int col) { return this->pData[row * nCol + col]; }
+    virtual ~SHMatrix() {}
+
+private:
+    int nRow;
+    int nCol;
+};
+
 }
-
-
 
 #endif // SUHANMATH_H

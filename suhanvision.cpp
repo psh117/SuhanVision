@@ -10,17 +10,14 @@
 #include <cmath>
 #include <cstdlib>
 #include <random>
+#include <array>
 
 // 생성자
 
 /**
  * @brief SHImage::SHImage
  */
-SHImage::SHImage()
-{
-    pData = NULL;
-    pHistogramData = NULL;
-}
+SHImage::SHImage() : pHistogramData(NULL) {}
 
 /**
  * @brief SHImage::SHImage
@@ -30,8 +27,9 @@ SHImage::SHImage()
  * @param type 생성할 이미지의 타입 (RGB, HSV 등)
  */
 SHImage::SHImage(int col, int row, int channel, IMG_TYPE type)
+    : SHArray()
 {
-    pData = NULL;
+    SHImage();
     pHistogramData = NULL;
     nType = type;
     Create(col,row,channel);
@@ -42,7 +40,7 @@ SHImage::SHImage(int col, int row, int channel, IMG_TYPE type)
  */
 SHImage::SHImage(KImageColor& refImage)
 {
-    pData = NULL;
+    SHImage();
     pHistogramData = NULL;
 
     int col,row;
@@ -67,9 +65,16 @@ SHImage::SHImage(KImageColor& refImage)
 }
 
 
+SHImage::SHImage(const SHImage& ref)
+{
+    SHImage();
+    pHistogramData = NULL;
+    *this = ref;
+}
+
 SHImage::SHImage(KImageGray& refImage)
 {
-    pData = NULL;
+    SHImage();
     pHistogramData = NULL;
 
     int col,row;
@@ -97,8 +102,6 @@ SHImage::SHImage(KImageGray& refImage)
  */
 SHImage::~SHImage()
 {
-    if(pData != NULL)
-        delete pData;
     if(pHistogramData != NULL)
         delete pHistogramData;
 }
@@ -107,19 +110,8 @@ SHImage& SHImage::operator =(const SHImage& src)
 {
     Create(src.Col(),src.Row(),src.Channel(),src.Type());
     nThreshold = src.Threshold();
-    int adr = 0;
 
-    for(int i=0;i<nRow;i++)
-    {
-        for(int j=0;j<nCol;j++)
-        {
-            for(int k=0;k<nChannel;k++)
-            {
-                pData[adr] = src[adr];
-                adr++;
-            }
-        }
-    }
+    SHArray::operator =(src);
     return *this;
 }
 
@@ -132,29 +124,22 @@ SHImage& SHImage::operator =(const SHImage& src)
  */
 void SHImage::Create(int col, int row, int channel, IMG_TYPE type)
 {
-    // delete previous data
-    if(pData != NULL)
-        delete pData;
+
     if(pHistogramData != NULL)
         delete pHistogramData;
 
     nCol = col;
     nRow = row;
+
     nChannel = channel;
     nType = type;
     nThreshold = -1;
 
     bHistogram = false;
 
-    // allocate memory
     int length = nCol * nRow * nChannel;
-    pData = new int[length];
+    SHArray::Create(length);
 
-    // reset all data
-    for(int i=0; i<length; i++)
-    {
-        pData[i] = 0;
-    }
 }
 
 /**
@@ -162,10 +147,8 @@ void SHImage::Create(int col, int row, int channel, IMG_TYPE type)
  */
 void SHImage::Reset()
 {
-    if(pData != NULL)
-        delete pData;
+    SHArray::Reset();
 
-    pData = NULL;
     nCol = 0;
     nRow = 0;
     nChannel = 0;
@@ -721,28 +704,95 @@ void SHImage::AddSlatPepperNoise(double dSigma)
 
 void SHImage::GaussianSmoothing(double dSigma)
 {
-    int i,j;
+    int i,j,k;
+    int x, y;
 
-    int nHalf = (int)(3.0*dSigma+0.3);
-    int nMask[nHalf*2+1][nHalf*2+1];
+    // 마스크 만들기
+    int nHalf = (int)(dSigma);
+    int nFull = 2 * nHalf + 1;
+    SHMatrix<double> mMask(nFull,nFull);
+    //double nMask[nFull][nFull];
 
     double dScale = 0.0;
     double dSigma2 = Square<double>(dSigma);
 
     double dConst = 1.0 / PI * 2 / dSigma2;
 
+    x = -nHalf;
+    y = -nHalf;
+    for(i=0;i<nFull;i++)    // y
+    {
+        for(j=0;j<nFull;j++)    // x
+        {
+            mMask.at(i,j) = dConst*
+                    exp((Square<int>(x) + Square<int>(y))
+                        * -1.0 / 2.0 / dSigma2);
+            dScale += mMask.at(i,j);
+            x++;
+        }
+        y++;
+    }
+    mMask /= dScale;
 
-
+    // 콘볼루쟌
+    SHImage dst(*this);
+    double dValue;
+    for(i=nHalf;i<nRow-nHalf;i++)
+    {
+        for(j=nHalf;j<nCol-nHalf;j++)
+        {
+            for(k=0;k<nChannel;k++)
+            {
+                dValue = 0.0;
+                for(y=-nHalf; y<=nHalf; y++)
+                {
+                    for(x=-nHalf; x<=nHalf; x++)
+                    {
+                        dValue += dst.pixel(j+x,i+y,k) * mMask.at(y+nHalf,x+nHalf);
+                    }
+                }
+                pixel(j,i,k) = (int)dValue;
+            }
+        }
+    }
 }
 
-void SHImage::MedianFiltering(double dSigma)
+void SHImage::MedianFiltering(int nMask)
 {
+    int i,j,k;
+    int x,y;
 
+    int nHalf = nMask / 2;
+    // 에러 방지용
+    int nFull = nHalf * 2 + 1;
+    const int nSize = nFull * nFull;
+
+    vector<int> vMedianVect(nSize);
+
+    SHImage src(*this);
+    for(i=nHalf; i<nRow-nHalf; i++)
+    {
+        for(j=nHalf; j<nCol-nHalf; j++)
+        {
+            for(k=0;k<nChannel;k++)
+            {
+                vMedianVect.clear();
+                for(y=-nHalf;y<=nHalf;y++)
+                {
+                    for(x=-nHalf;x<=nHalf;x++)
+                    {
+                        vMedianVect.push_back(src.pixel(j+x,i+y,k));
+                    }
+                }
+                sort(vMedianVect.begin(),vMedianVect.end());
+                pixel(j,i,k) = vMedianVect[nSize / 2];
+            }
+        }
+    }
 }
 
 void SHLabel::UpdateVectorList(vector<int> &refVector, int index)
 {
-
     unsigned int i,j;
 
     for(i=0;i<vvEquList[index].size();i++)
@@ -763,8 +813,6 @@ void SHLabel::UpdateVectorList(vector<int> &refVector, int index)
             //isChanged = true;
         }
     }
-
-
 }
 
 void SHLabel::SyncEquList()

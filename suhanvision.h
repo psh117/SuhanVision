@@ -31,6 +31,8 @@ using SuhanMath::Max;
 using SuhanMath::Min;
 using SuhanMath::Square;
 using SuhanMath::PI;
+using SuhanMath::SHMatrix;
+using SuhanMath::SHArray;
 
 using namespace std;
 
@@ -38,12 +40,13 @@ using namespace std;
  * @brief The SHImage class
  * 수한 이미지 클래스 Suhan Image Class
  */
-class SHImage
+class SHImage : SHArray<int>
 {
 public:
     // 생 소멸자
     SHImage();
     SHImage(int col, int row, int channel = 1, IMG_TYPE type = GRAY);
+    SHImage(const SHImage& ref);
     SHImage(KImageColor& refImage);
     SHImage(KImageGray& refImage);
     virtual ~SHImage();
@@ -103,14 +106,13 @@ public:
     void AddGaussianNoise(double dSigma);
     void AddSlatPepperNoise(double dSigma);
     void GaussianSmoothing(double dSigma);
-    void MedianFiltering(double dSigma);
+    void MedianFiltering(int nMask);
 
 protected:
     IMG_TYPE nType; ///< 현재 이미지 타입 Current image type
     int nCol;       ///< 칸 수 (너비) a number of cols of image
     int nRow;       ///< 줄 수 (높이) a number of rows of image
     int nChannel;   ///< 채널 개수 a number of channel (1ch, 2ch, 3ch)
-    int *pData;    ///< 이미지 데이터 저장 포인터 Array pointer of image data
 
     int *pHistogramData; ///< Histogram 데이터가 저장되는 곳
     bool bHistogram; ///< Histogram 데이터가 생성되었는지 나타내 줌
