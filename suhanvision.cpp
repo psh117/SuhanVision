@@ -69,7 +69,10 @@ SHImage::SHImage(const SHImage& ref)
 {
     SHImage();
     pHistogramData = NULL;
-    *this = ref;
+    Create(ref.Col(),ref.Row(),ref.Channel(),ref.Type());
+    nThreshold = ref.Threshold();
+
+    SHArray::operator =(ref);
 }
 
 SHImage::SHImage(KImageGray& refImage)
@@ -207,9 +210,9 @@ void SHImage::ToKImageColor(KImageColor& dstImage)
             for(j=0;j<nCol;j++)
             {
                 int nPtr = i*nCol + j;
-                dstImage[i][j].r = tmp[nPtr * 3 + 0];
-                dstImage[i][j].g = tmp[nPtr * 3 + 1];
-                dstImage[i][j].b = tmp[nPtr * 3 + 2];
+                dstImage[i][j].r = (unsigned char)tmp[nPtr * 3 + 0];
+                dstImage[i][j].g = (unsigned char)tmp[nPtr * 3 + 1];
+                dstImage[i][j].b = (unsigned char)tmp[nPtr * 3 + 2];
             }
         }
 
@@ -236,7 +239,29 @@ void SHImage::ToKImageGray(KImageGray& dstImage)
         for(j=0;j<nCol;j++)
         {
             int nPtr = i*nCol + j;
-            dstImage[i][j] = pData[nPtr];
+            dstImage[i][j] = (unsigned char)pData[nPtr];
+            //printf("%d ",dstImage[i][j]);
+        }
+        //printf("\r\n");
+    }
+    //printf("\r\n");
+}
+
+void SHImage::ToHalfSize(SHImage& dstImage)
+{
+    int row = nRow >> 1;
+    int col = nCol >> 1;
+    dstImage.Create(col,row,nChannel,nType);
+
+    int i,j,k;
+    for(i=0;i<nChannel;i++)
+    {
+        for(j=0;j<row;j++)
+        {
+            for(k=0;k<col;k++)
+            {
+                dstImage.pixel(k,j,i) = pixel(k<<1,j<<1,i);
+            }
         }
     }
 }
@@ -252,78 +277,84 @@ void SHImage::ConvertToRGB(SHImage& dstImage)
 
     int i,j;
 
-    for(i=0;i<nRow;i++)
+    switch (nType)
     {
-        for(j=0;j<nCol;j++)
-        {
-            int h,s,v;
-            int r,g,b;
+    case GRAY:
+        for(i=0;i<nRow;i++) {
+            for(j=0;j<nCol;j++) {
+                int nPtr = i*nCol + j;
+                if(nType == GRAY) {
+                    dstImage[nPtr * 3 + 0] = pData[nPtr];
+                    dstImage[nPtr * 3 + 1] = pData[nPtr];
+                    dstImage[nPtr * 3 + 2] = pData[nPtr];
+        }}}
+        break;
 
-            int nPtr = i*nCol + j;
+    case HSV:
+        for(i=0;i<nRow;i++) {
+            for(j=0;j<nCol;j++) {
+                int h,s,v;
+                int r,g,b;
 
-            switch (nType)
-            {
-            case HSV:
+                int nPtr = i*nCol + j;
                 h = pData[nPtr * 3 + 0];
                 s = pData[nPtr * 3 + 1];
                 v = pData[nPtr * 3 + 2];
-                break;
-            default:
-                break;
+
+                // 0~1, 0~180으로 스케일된 값
+                double h_scale = h * 2.0;
+                double s_scale = s / 255.0;
+                double v_scale = v / 255.0;
+
+                // Chroma의 값
+                double C = v_scale * s_scale;
+
+                // H'의 값
+                double H_ = h_scale / 60;
+
+                // H'의 범위를 Case로 구분짓는 identity
+                int idt = H_;
+
+                // H' mod 2를 연산할 때 floating point에 %연산자 사용이 불가하므로
+                // int로 나머지를 구한 뒤 소숫점을 더해주기 위해 소숫점 아랫부분 값을 먼저 구함
+                double ff = H_ - idt;
+
+                // X = C(1- |H' mod 2 - 1|) 공식으로 Intermediate 값으로 사용. 두번째 큰 값
+                double X = C * (1 - fabs( idt % 2 + ff - 1 ) );
+
+                // R,G,B 모두 더해주는 값
+                double m = v_scale - C;
+
+                // 0~1범위의 R' G' B'
+                double R_ = 0.0, G_ = 0.0, B_ = 0.0;
+
+
+                switch(idt)
+                {
+                case 0: R_ = C; G_ = X; break;
+                case 1: R_ = X; G_ = C; break;
+                case 2: G_ = C; B_ = X; break;
+                case 3: G_ = X; B_ = C; break;
+                case 4: R_ = X; B_ = C; break;
+                case 5: R_ = C; B_ = X; break;
+                default:
+                    break;
+                }
+
+                r = (R_+m) * 255;
+                g = (G_+m) * 255;
+                b = (B_+m) * 255;
+
+                dstImage[nPtr * 3 + 0] = r;
+                dstImage[nPtr * 3 + 1] = g;
+                dstImage[nPtr * 3 + 2] = b;
             }
-
-            // 0~1, 0~180으로 스케일된 값
-            double h_scale = h * 2.0;
-            double s_scale = s / 255.0;
-            double v_scale = v / 255.0;
-
-            // Chroma의 값
-            double C = v_scale * s_scale;
-
-            // H'의 값
-            double H_ = h_scale / 60;
-
-            // H'의 범위를 Case로 구분짓는 identity
-            int idt = H_;
-
-            // H' mod 2를 연산할 때 floating point에 %연산자 사용이 불가하므로
-            // int로 나머지를 구한 뒤 소숫점을 더해주기 위해 소숫점 아랫부분 값을 먼저 구함
-            double ff = H_ - idt;
-
-            // X = C(1- |H' mod 2 - 1|) 공식으로 Intermediate 값으로 사용. 두번째 큰 값
-            double X = C * (1 - fabs( idt % 2 + ff - 1 ) );
-
-            // R,G,B 모두 더해주는 값
-            double m = v_scale - C;
-
-            // 0~1범위의 R' G' B'
-            double R_ = 0.0, G_ = 0.0, B_ = 0.0;
-
-
-            switch(idt)
-            {
-            case 0: R_ = C; G_ = X; break;
-            case 1: R_ = X; G_ = C; break;
-            case 2: G_ = C; B_ = X; break;
-            case 3: G_ = X; B_ = C; break;
-            case 4: R_ = X; B_ = C; break;
-            case 5: R_ = C; B_ = X; break;
-            default:
-                break;
-            }
-
-            r = (R_+m) * 255;
-            g = (G_+m) * 255;
-            b = (B_+m) * 255;
-
-            dstImage[nPtr * 3 + 0] = r;
-            dstImage[nPtr * 3 + 1] = g;
-            dstImage[nPtr * 3 + 2] = b;
-
-
         }
-
+        break;
+    default:
+        break;
     }
+
 }
 
 /**
@@ -708,7 +739,7 @@ void SHImage::GaussianSmoothing(double dSigma)
     int x, y;
 
     // 마스크 만들기
-    int nHalf = (int)(dSigma);
+    int nHalf = (int)(dSigma*2); // 95%
     int nFull = 2 * nHalf + 1;
     SHMatrix<double> mMask(nFull,nFull);
     //double nMask[nFull][nFull];
@@ -718,10 +749,10 @@ void SHImage::GaussianSmoothing(double dSigma)
 
     double dConst = 1.0 / PI * 2 / dSigma2;
 
-    x = -nHalf;
     y = -nHalf;
     for(i=0;i<nFull;i++)    // y
     {
+        x = -nHalf;
         for(j=0;j<nFull;j++)    // x
         {
             mMask.at(i,j) = dConst*
@@ -789,6 +820,126 @@ void SHImage::MedianFiltering(int nMask)
             }
         }
     }
+}
+
+// DRAW LINE - SHIMAGE Class
+
+void SHImage::DrawLine(double rho, double theta)
+{
+    int x,y;
+    for(x=0;x<nCol;x++)
+    {
+        y = (int)(( rho + x * sin(theta) ) / cos(theta));
+        safeSetPixel(230,x,y,0);
+        safeSetPixel(230,x+1,y,0);
+        safeSetPixel(230,x,y+1,0);
+        safeSetPixel(230,x+1,y+1,0);
+        safeSetPixel(230,x,y-1,0);
+        safeSetPixel(230,x-1,y,0);
+        safeSetPixel(230,x-1,y-1,0);
+        //safeSetPixel(60,x,y,1);
+        //safeSetPixel(60,x,y,2);
+    }
+}
+
+
+
+void SHImage::DrawCircle(int x, int y, int r)
+{
+    int deg;
+    int x_p, y_p;
+    for(deg=0;deg<360;deg++)
+    {
+        x_p = x + r*cos(deg * PI / 180);
+        y_p = y + r*sin(deg * PI / 180);
+        safeSetPixel(230,x_p,y_p,0);
+        safeSetPixel(230,x_p+1,y_p,0);
+        safeSetPixel(230,x_p,y_p+1,0);
+        safeSetPixel(230,x_p+1,y_p+1,0);
+        safeSetPixel(230,x_p,y_p-1,0);
+        safeSetPixel(230,x_p-1,y_p,0);
+        safeSetPixel(230,x_p-1,y_p-1,0);
+    }
+}
+void SHImage::DrawX(int x, int y)
+{
+    safeSetPixel(230,x,y);
+    for(int i =0;i<5;i++)
+    {
+        safeSetPixel(230,x+i,y+i);
+        safeSetPixel(230,x-i,y+i);
+        safeSetPixel(230,x+i,y-i);
+        safeSetPixel(230,x-i,y-i);
+    }
+}
+void SHImage::DrawLineRGB(int x1, int y1, int x2, int y2, SHRGB rgb)
+{
+    int dx = x2-x1;
+    int dy = y2-y1;
+    int i;
+    int x,y;
+    if(dx == 0 && dy == 0) return;
+
+    //qDebug("dx == %d, dy == %d",dx,dy);
+    if(abs(dx) < abs(dy))
+    {
+        for(i=y1; i!=y2; i+=(dy/abs(dy)) )
+        {
+            y = i;
+            x = x1 + ((double)dx / dy) * (i-y1);
+            safeSetPixel(rgb.R,x,y,0);
+            safeSetPixel(rgb.G,x,y,1);
+            safeSetPixel(rgb.B,x,y,2);
+        }
+        y = i;
+        x = x1 + ((double)dx / dy) * (i-y1);
+        // 마지막
+        safeSetPixel(rgb.R,x,y,0);
+        safeSetPixel(rgb.G,x,y,1);
+        safeSetPixel(rgb.B,x,y,2);
+    }
+    else
+    {
+
+        for(i=x1; i!=x2; i+=(dx/abs(dx)) )
+        {
+            x = i;
+            y = y1 + ((double)dy / dx) * (i-x1);
+            safeSetPixel(rgb.R,x,y,0);
+            safeSetPixel(rgb.G,x,y,1);
+            safeSetPixel(rgb.B,x,y,2);
+        }
+        x = i;
+        y = y1 + ((double)dy / dx) * (i-x1);
+        // 마지막
+        safeSetPixel(rgb.R,x,y,0);
+        safeSetPixel(rgb.G,x,y,1);
+        safeSetPixel(rgb.B,x,y,2);
+    }
+}
+
+void SHImage::DrawArrowRGB(int x1, int y1, int x2, int y2, double length, SHRGB rgb)
+{
+    //qDebug("Draw Line");
+    DrawLineRGB(x1,y1,x2,y2,rgb);
+
+    double deg = atan2((y2 - y1), (x2 - x1));
+    double deg_dst;
+    //x2 -= cos(deg) * 12;
+    //y2 -= sin(deg) * 12;
+
+    //qDebug("Draw 1");
+    deg_dst = deg + 30 * (3.141592) / 180 ;
+    x1 = x2 - cos(deg_dst) * length;
+    y1 = y2 - sin(deg_dst) * length;
+    DrawLineRGB(x1,y1,x2,y2,rgb);
+
+    //qDebug("Draw 2");
+    deg_dst = deg - 30 * (3.141592) / 180;
+    x1 = x2 - cos(deg_dst) * length;
+    y1 = y2 - sin(deg_dst) * length;
+    DrawLineRGB(x1,y1,x2,y2,rgb);
+
 }
 
 void SHLabel::UpdateVectorList(vector<int> &refVector, int index)
@@ -956,6 +1107,875 @@ void SHLabel::PrintBlobColor(SHImage &colorImage, int nMinSize)
                 colorImage.pixel(vvLabelList[i][j].x,vvLabelList[i][j].y,1) = g;
                 colorImage.pixel(vvLabelList[i][j].x,vvLabelList[i][j].y,2) = b;
             }
+        }
+    }
+}
+
+
+/* SHEdge */
+
+void SHEdge::Init(double dSigmaVal, int nMaskLength)
+{
+    // 내부 변수
+    dSigma = dSigmaVal;
+
+    // 마스크 만들기
+    nHalf = nMaskLength / 2;
+    nFull = nHalf * 2 + 1;
+
+    //create the conv. mask
+    mKernelX.Create(nFull,nFull);
+    mKernelY.Create(nFull,nFull);
+
+    //compute the mask
+    int i,j;
+    int x,y;
+    double dTmp,dScale=0.0;
+    double dSigma2 = Square<double>(dSigma);
+
+    // FDG
+    y=-nHalf;
+    for(i=0;i<nFull;i++)
+    {
+        x=-nHalf;
+        dTmp = -y*exp(-(y*y)) / (2*dSigma2);
+        for(j=0;j<nFull;j++)
+        {
+            mKernelY.at(i,j) = dTmp*exp(-(x*x)/dSigma2*PI);
+            mKernelX.at(j,i) = mKernelY.at(i,j);
+            if(mKernelY.at(i,j) > 0)
+                dScale += mKernelY.at(i,j);
+            x++;
+        }
+        y++;
+    }
+    for(i=0; i<nMaskLength; i++)
+    {
+        for(j=0; j<nMaskLength; j++)
+        {
+            mKernelY.at(i,j) /= dScale;
+            mKernelX.at(i,j) /= dScale;
+        }
+    }
+    /*
+    printf("\n");
+    for(i=0;i<nFull;i++)
+    {
+        for(j=0;j<nFull;j++)
+        {
+            printf("%.4lf ", mKernelY.at(i,j));
+        }
+        printf("\n");
+    }
+    for(i=0;i<nFull;i++)
+    {
+        for(j=0;j<nFull;j++)
+        {
+            printf("%.4lf ", mKernelX.at(i,j));
+        }
+        printf("\n");
+    }
+    */
+}
+SHEdgeData& SHEdge::EdgePixel(int row, int col)
+{
+    return pEdgeData[row*nCol + col];
+}
+
+void SHEdge::Canny(double dLow, double dHigh, SHImage imgRef)
+{
+    vEdgeData.clear();
+    vEdgeTemp.clear();
+
+    SHImage::Create(imgRef.Col(),imgRef.Row());
+
+    pEdgeData = new SHEdgeData[nCol*nRow];
+
+    int i,j,r,c;
+    int x,y;
+    double dGradX, dGradY, dDeg;
+
+    for(i=nHalf; i<nRow - nHalf; i++)
+    {
+        for(j=nHalf; j<nCol - nHalf; j++)
+        {
+            dGradX = 0.0;
+            dGradY = 0.0;
+
+            // convolution
+            y=-nHalf;
+            for(r=0;r<nFull;r++)
+            {
+                x=-nHalf;
+                for(c=0;c<nFull;c++)
+                {
+                    dGradX += imgRef.pixel(j+x,i+y) * mKernelX.at(r,c);
+                    dGradY += imgRef.pixel(j+x,i+y) * mKernelY.at(r,c);
+                    x++;
+                }
+                y++;
+            }
+            //printf("(%d,%d) Mag = %.4lf, %.4lf ",i,j,dGradX,dGradY);
+            // magnitude
+            EdgePixel(i,j).dMag = abs(dGradX) + abs(dGradY);
+            //printf("  %.4lf\n",EdgePixel(i,j).dMag);
+            //EdgePixel(i,j).dMag = sqrt(Square<double>(dGradX) + Square<double>(dGradY));
+
+            // direction
+            if(EdgePixel(i,j).dMag > dLow)
+            {
+                dDeg = atan2(dGradY,dGradX);
+                EdgePixel(i,j).nAng = (unsigned short)(dDeg * 180.0 / PI);
+                EdgePixel(i,j).nDir = (unsigned char)((((int)(EdgePixel(i,j).nAng/22.5)+1)>>1) & 0x03);
+            }
+            else
+            {
+                EdgePixel(i,j).dMag = 0.0;
+            }
+        }
+    }
+
+    // non-maxima suppression
+
+    int         nShiftX[4] = {1,1,0,-1};
+    int         nShiftY[4] = {0,1,1,1};
+    int         nH=nRow-nHalf-1, nW=nCol-nHalf-1;
+
+    SHEdgeData oEdgeData;
+
+    for(i=nHalf+1; i<nH; i++){
+        for(j=nHalf+1; j<nW; j++){
+            if(EdgePixel(i,j).dMag == 0.0) continue;
+
+
+            if(EdgePixel(i,j).dMag > EdgePixel(i + nShiftY[EdgePixel(i,j).nDir],j + nShiftX[EdgePixel(i,j).nDir]).dMag &&
+               EdgePixel(i,j).dMag > EdgePixel(i - nShiftY[EdgePixel(i,j).nDir],j - nShiftX[EdgePixel(i,j).nDir]).dMag)
+            {
+                if(EdgePixel(i,j).dMag > dHigh){
+                    oEdgeData.u    = (unsigned short)j;
+                    oEdgeData.v    = (unsigned short)i;
+                    oEdgeData.nAng = EdgePixel(i,j).nAng;
+                    oEdgeData.nDir = EdgePixel(i,j).nDir;
+                    oEdgeData.dMag = EdgePixel(i,j).dMag;
+
+                    vEdgeTemp.push_back(oEdgeData);
+                }
+                EdgePixel(i,j).dBuf = EdgePixel(i,j).dMag;
+            }
+            else if(EdgePixel(i,j).dMag == EdgePixel(i + nShiftY[EdgePixel(i,j).nDir],j + nShiftX[EdgePixel(i,j).nDir]).dMag) // 같은 값이 2개 연속일 때 예외처리
+            {
+                if(EdgePixel(i,j).dMag > dHigh){
+                    oEdgeData.u    = (unsigned short)j;
+                    oEdgeData.v    = (unsigned short)i;
+                    oEdgeData.nAng = EdgePixel(i,j).nAng;
+                    oEdgeData.nDir = EdgePixel(i,j).nDir;
+                    oEdgeData.dMag = EdgePixel(i,j).dMag;
+
+                    vEdgeTemp.push_back(oEdgeData);
+                }
+                EdgePixel(i,j).dBuf = EdgePixel(i,j).dMag;
+            }
+        }
+    }
+
+    // hysteresis thresholding
+    int iy,jx;
+    while(vEdgeTemp.empty() == false)
+    {
+        // store edge list
+        oEdgeData = vEdgeTemp.back();
+        vEdgeData.push_back(oEdgeData);
+        vEdgeTemp.pop_back();
+
+        // get edge coordinate
+        jx = oEdgeData.u;
+        iy = oEdgeData.v;
+
+        // search neighbor edges
+        for(i=-1; i<2; i++)
+            for(j=-1; j<2; j++)
+                if(EdgePixel(iy+i,jx+j).dBuf && EdgePixel(iy+i,jx+j).dBuf <= dHigh)
+                {
+                    oEdgeData.u    = (unsigned short)(jx+j);
+                    oEdgeData.v    = (unsigned short)(iy+i);
+                    oEdgeData.nAng = EdgePixel(i+iy,j+jx).nAng;
+                    oEdgeData.nDir = EdgePixel(i+iy,j+jx).nDir;
+                    oEdgeData.dMag = EdgePixel(i+iy,j+jx).dBuf;
+
+                    vEdgeTemp.push_back(oEdgeData);
+
+                    EdgePixel(i+iy,j+jx).dBuf = 0.0;
+                }
+    }
+
+    for(i=0;i<(int)vEdgeData.size();i++)
+    {
+        pixel(vEdgeData[i].u,vEdgeData[i].v) = 255;
+    }
+
+}
+
+
+
+
+void SHHough::FindLine(SHEdge &edImage, double dRhoRes, double dThetaRes, int nThreshold)
+{
+    if(pLineSpace)
+        delete pLineSpace;
+
+    int maxSize;
+    maxSize = (edImage.Col() + edImage.Row()) * 2;
+
+    nRhoSize = maxSize / dRhoRes;
+    nThetaSize = PI / dThetaRes;
+
+    // Space 생성
+    pLineSpace = new int[nRhoSize * nThetaSize];
+
+    int i,j;
+    for(i=0;i<(int)edImage.vEdgeData.size();i++)
+    {
+        for(j=0;j<nThetaSize;j++)
+        {
+            int x = edImage.vEdgeData[i].u;
+            int y = edImage.vEdgeData[i].v;
+            double rho = (-x * sin(j * dThetaRes) + y * cos(j * dThetaRes) + maxSize / 2) * (1 / dRhoRes);
+            LineSpace((int)(rho),j) += 1;
+        }
+    }
+
+    vLineList.clear();
+    for(i=0;i<nRhoSize;i++)
+    {
+        for(j=0;j<nThetaSize;j++)
+        {
+            if(LineSpace(i,j) > nThreshold)
+            {
+                HoughLine oHL;
+                oHL.rho = (i * dRhoRes) - maxSize/2;
+                oHL.theta = j * dThetaRes;
+                vLineList.push_back(oHL);
+            }
+        }
+    }
+}
+
+void SHHough::FindCircle(SHEdge& edImage, double dRes, int nMinRad, int nMaxRad, int nThreshold)
+{
+    if(pCircleSpace)
+        delete pCircleSpace;
+
+    nRadSize = nMaxRad - nMinRad;
+
+    // Space 생성
+    nXSize = edImage.Col() / dRes;
+    nYSize = edImage.Row() / dRes;
+    int nSize = ( nXSize * nYSize ) * nRadSize;
+    pCircleSpace = new int[nSize];
+
+    int i,j,k,l;
+    for(i=0;i<(int)edImage.vEdgeData.size();i++)
+    {
+        for(j=1;j<nRadSize;j++)
+        {
+            int nRad = nMinRad + j;
+            double dAng = edImage.vEdgeData[i].nAng * PI / 180;
+
+            int x = (edImage.vEdgeData[i].u - nRad * cos(dAng)) / dRes;
+            int y = (edImage.vEdgeData[i].v - nRad * sin(dAng)) / dRes;
+            if(x<2) continue;
+            if(y<2) continue;
+
+            for(k=-2;k<3;k++)
+            {
+                for(l=-2;l<3;l++)
+                {
+                    CircleSpace(x+k,y+l,j-1) += 1;
+                    CircleSpace(x+k,y+l,j) += 1;
+                    CircleSpace(x+k,y+l,j+1) += 1;
+                }
+            }
+            CircleSpace(x,y,j) += 1;
+
+            x = (edImage.vEdgeData[i].u + nRad * cos(dAng)) / dRes;
+            y = (edImage.vEdgeData[i].v + nRad * sin(dAng)) / dRes;
+
+            for(k=-2;k<3;k++)
+            {
+                for(l=-2;l<3;l++)
+                {
+                    CircleSpace(x+k,y+l,j-1) += 1;
+                    CircleSpace(x+k,y+l,j) += 1;
+                    CircleSpace(x+k,y+l,j+1) += 1;
+                }
+            }
+            CircleSpace(x,y,j) += 1;
+
+        }
+    }
+    vCircleList.clear();
+    for(i=0;i<nYSize;i++)
+    {
+        for(j=0;j<nXSize;j++)
+        {
+            for(k=0;k<nRadSize;k++)
+            {
+                if(CircleSpace(j,i,k) > nThreshold)
+                {
+                    int a,b,c;
+                    bool fail = false;
+                    for(a=-1;a<2;a++)
+                    {
+                        for(b=-1;b<2;b++)
+                        {
+                            for(c=-1;c<2;c++)
+                            {
+                                if(CircleSpace(j,i,k) <= CircleSpace(j+a,i+b,k+c))
+                                {
+                                    if(a==0 && b==0 && c==0) continue;
+                                    fail = true;
+                                }
+                            }
+                        }
+                    }
+                    for(a=-1;a<1;a++)
+                    {
+                        for(b=-1;b<1;b++)
+                        {
+                            for(c=-1;c<1;c++)
+                            {
+                                if(CircleSpace(j,i,k) == CircleSpace(j+a,i+b,k+c))
+                                {
+                                    if(a==0 && b==0 && c==0) continue;
+                                    fail = false;
+                                }
+                            }
+                        }
+                    }
+                    if(fail == false)
+                    {
+
+                        HoughCircle oHC;
+                        oHC.rad = k+nMinRad;
+                        oHC.x = j * dRes;
+                        oHC.y = i * dRes;
+                        vCircleList.push_back(oHC);
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+
+SHCornerImage& SHCorner::CornerPixel(int row, int col)
+{
+    return pCornerData[row*nCol + col];
+}
+
+void SHCorner::Init(const double& dSigmaValue, const int& nBlockSize)
+{
+
+    dSigma = dSigmaValue;
+
+    // 마스크 만들기
+    nHalf = 3.0 * dSigma;
+    nFull = nHalf * 2 + 1;
+
+    //create the conv. mask
+    mKernelX.Create(nFull,nFull);
+    mKernelY.Create(nFull,nFull);
+
+
+    //compute the mask
+    int i,j;
+    int x,y;
+    double dTmp,dScale=0.0;
+    double dSigma2 = Square<double>(dSigma);
+
+
+    // FDG
+    y=-nHalf;
+    for(i=0;i<nFull;i++)
+    {
+        x=-nHalf;
+        dTmp = -y*exp(-(y*y)) / (2*dSigma2);
+        for(j=0;j<nFull;j++)
+        {
+            mKernelY.at(i,j) = dTmp*exp(-(x*x)/dSigma2*PI);
+            mKernelX.at(j,i) = mKernelY.at(i,j);
+            if(mKernelY.at(i,j) > 0)
+                dScale += mKernelY.at(i,j);
+            x++;
+        }
+        y++;
+    }
+    mKernelX /= dScale;
+    mKernelY /= dScale;
+
+    /*
+    // debug
+
+    printf("\r\n [mKernelX] \r\n");
+    for(i=0;i<nFull;i++)
+    {
+        for(j=0;j<nFull;j++)
+        {
+            printf("%.3lf ", mKernelX.at(i,j));
+        }
+        printf("\r\n");
+    }
+    */
+
+    nHalfBlock   = nBlockSize/2;
+    nFullBlock  = nHalfBlock*2 + 1;
+
+    mBlockWeight.Create(nFullBlock,nFullBlock);
+
+    double dSigmaBlock = nHalfBlock / 3.0;
+
+
+    dSigma2 = 2.0*Square<double>(dSigmaBlock);
+    dScale   = 0.0;
+
+    y=-nHalfBlock;
+    for(i=0;i<nFullBlock;i++)
+    {
+        x=-nHalfBlock;
+        for(j=0;j<nFullBlock;j++)
+        {
+            mBlockWeight.at(i,j) = exp(-(x*x+y*y)/dSigma2);
+            dScale += mBlockWeight.at(i,j);
+            x++;
+        }
+        y++;
+    }
+
+    mBlockWeight /= dScale;
+
+    /*
+    // debug
+
+    printf("\r\n [mBlockWeight] \r\n");
+    for(i=0;i<nFullBlock;i++)
+    {
+        for(j=0;j<nFullBlock;j++)
+        {
+            printf("%.3lf ", mBlockWeight.at(i,j));
+        }
+        printf("\r\n");
+    }
+    */
+
+}
+
+void SHCorner::HarrisCorner(const double& dThresh, const SHImage& imgIn)
+{
+    if(pCornerData)
+        delete pCornerData;
+
+    nCol = imgIn.Col();
+    nRow = imgIn.Row();
+
+    pCornerData = new SHCornerImage[nCol * nRow];
+
+    // GradX, GradY Convolution
+
+
+    int i,j,k,l,x,y;
+
+
+    // Gradient X Convolution
+    for(i=nHalf;i<nRow - nHalf;i++)
+    {
+        for(j=nHalf; j<nCol-nHalf; j++)
+        {
+            double dValueTemp = 0.0;
+            y = -nHalf;
+            for(k=0;k<nFull;k++)
+            {
+                x = -nHalf;
+                for(l=0;l<nFull;l++)
+                {
+                    dValueTemp += mKernelX.at(k,l) * imgIn.pixel(j+x,i+y);
+                    x++;
+                }
+                y++;
+            }
+            CornerPixel(i,j).dGradX = dValueTemp;
+        }
+    }
+
+    // Gradient Y Convolution
+    for(i=nHalf;i<nRow - nHalf;i++)
+    {
+        for(j=nHalf; j<nCol-nHalf; j++)
+        {
+            double dValueTemp = 0.0;
+            y = -nHalf;
+            for(k=0;k<nFull;k++)
+            {
+                x = -nHalf;
+                for(l=0;l<nFull;l++)
+                {
+                    dValueTemp += mKernelY.at(k,l) * imgIn.pixel(j+x,i+y);
+                    x++;
+                }
+                y++;
+            }
+            CornerPixel(i,j).dGradY = dValueTemp;
+        }
+    }
+
+    /*
+    // debug
+
+    printf("\r\n [dGradX] \r\n");
+    for(i=nHalf;i<nRow - nHalf;i++)
+    {
+        for(j=nHalf;j<nCol - nHalf;j++)
+        {
+            printf("%5.2lf ", CornerPixel(i,j).dGradX);
+        }
+        printf("\r\n");
+    }
+
+    // debug
+
+    printf("\r\n [dGradY] \r\n");
+    for(i=nHalf;i<nRow - nHalf;i++)
+    {
+        for(j=nHalf;j<nCol - nHalf;j++)
+        {
+            printf("%5.2lf ", CornerPixel(i,j).dGradY);
+        }
+        printf("\r\n");
+    }
+    */
+
+
+    for(i=nHalf;i<nRow - nHalf;i++)
+    {
+        for(j=nHalf; j<nCol-nHalf; j++)
+        {
+            CornerPixel(i,j).dGradXX = CornerPixel(i,j).dGradX * CornerPixel(i,j).dGradX;
+            CornerPixel(i,j).dGradXY = CornerPixel(i,j).dGradX * CornerPixel(i,j).dGradY;
+            CornerPixel(i,j).dGradYY = CornerPixel(i,j).dGradY * CornerPixel(i,j).dGradY;
+        }
+    }
+
+    // M Matrix (Computer Vision #12, 9p)
+    SHMatrix<double> mM(2,2);
+
+    int nStartX = nHalf + nHalfBlock;
+    int nStartY = nHalf + nHalfBlock;
+    int nEndX = nCol - nHalf - nHalfBlock;
+    int nEndY = nRow - nHalf - nHalfBlock;
+    for(i=nStartY;i<nEndY;i++)
+    {
+        for(j=nStartX; j<nEndX; j++)
+        {
+            mM.Clear();
+            y = -nHalfBlock;
+            for(k=0;k<nFullBlock;k++)
+            {
+                x = -nHalfBlock;
+                for(l=0;l<nFullBlock;l++)
+                {
+                    mM.at(0,0) += CornerPixel(i+y,j+x).dGradXX * mBlockWeight.at(k,l);
+                    mM.at(1,0) += CornerPixel(i+y,j+x).dGradXY * mBlockWeight.at(k,l);
+                    mM.at(1,1) += CornerPixel(i+y,j+x).dGradYY * mBlockWeight.at(k,l);
+                    x++;
+                }
+                y++;
+            }
+
+            mM.at(0,1) = mM.at(1,0);
+
+            double dDetM = (mM.at(0,0) * mM.at(1,1) - Square<double>(mM.at(0,1)));
+            double dTrM = (mM.at(0,0) + mM.at(1,1));
+
+            CornerPixel(i,j).dR = dDetM - 0.04 * (dTrM * dTrM);
+        }
+    }
+
+    /*
+    printf("\r\n [dR] \r\n");
+    for(i=nStartY;i<nEndY;i++)
+    {
+        for(j=nStartX; j<nEndX; j++)
+        {
+            printf("%.2lf ", CornerPixel(i,j).dR);
+        }
+        printf("\r\n");
+    }
+
+    */
+    vector::clear();
+
+    SHCornerData oCornerData;
+
+    nStartX++;
+    nStartY++;
+    nEndX--;
+    nEndY--;
+
+    for(i=nStartY;i<nEndY;i++)
+    {
+        for(j=nStartX;j<nEndX;j++)
+        {
+            if(CornerPixel(i,j).dR < dThresh) continue;
+            bool isNear = false;
+            for(k=-1;k<2;k++)
+            {
+                for(l=-1;l<2;l++)
+                {
+                    if(k==0 && l==0) continue;
+                    if(CornerPixel(i,j).dR < CornerPixel(i+k,j+l).dR)
+                        isNear = true;
+                }
+            }
+            if(isNear == true) continue;
+            oCornerData.u = j;
+            oCornerData.v = i;
+            oCornerData.R = CornerPixel(i,j).dR;
+            vector::push_back(oCornerData);
+        }
+    }
+}
+
+
+
+int SHGaussianPiramid::Make(const SHImage& imgOrigin, double dSigma, int nOctave)
+{
+    this->dSigma = dSigma;
+    this->nOctave = nOctave;
+
+    // 마스크 만들기
+    int nHalf = (int)(dSigma*2); // 95%
+    int nFull = 2 * nHalf + 1;
+
+    //최상위 레벨에서 커널 크기의 4배이상이 되도록
+    if(nOctave == 0)
+    {
+        double dDim = _MIN(imgOrigin.Col(),imgOrigin.Row());
+        nOctave     = (int)(log(dDim/(double)(nFull))/log(2.0));
+    }
+
+    SHImage imgBase(imgOrigin);
+    vector::push_back(imgBase);
+
+    for(int i=1; i<nOctave; i++)
+    {
+        SHImage imgTmp(vector::back());
+        imgTmp.GaussianSmoothing(dSigma);
+        SHImage imgPush;
+        imgTmp.ToHalfSize(imgPush);
+
+        vector::push_back(imgPush);
+    }
+
+    return nOctave;
+}
+
+SHOpticalData& SHOpticalData::operator = (int n)
+{
+    dDx = n;
+    dDy = n;
+    dDxDy = n;
+    dDxDx = n;
+    dDxDy = n;
+
+    dDt = n;
+    dDtDx = n;
+    dDtDy = n;
+
+    u = n;
+    v = n;
+
+    return *this;
+}
+
+void SHOpticalFlow::findFlow(SHImage& imgT0, SHImage& imgT1, int nWindows)
+{
+    nCol = imgT0.Col();
+    nRow = imgT0.Row();
+
+    nHalf = nWindows / 2;
+    nFull = nHalf * 2+1;
+    double dSigma = nFull / 2.0;
+
+    int nLegnth = nCol * nRow;
+    SHArray::Create(nLegnth);
+
+    int i,j,k,l,x,y;
+
+
+    // Weight Matrix (before diagonal)
+    // Using Diagonal => mWeight[0~nWindows^2-1]
+    SHMatrix<double> mWeight(nFull,nFull);
+
+    double dScale = 0.0;
+    double dSigma2 = Square(dSigma);
+
+    double dConst = 1.0 / PI * 2 / dSigma2;
+
+    y = -nHalf;
+    for(i=0;i<nFull;i++)    // y
+    {
+        x = -nHalf;
+        for(j=0;j<nFull;j++)    // x
+        {
+            mWeight.at(i,j) = dConst*
+                    exp((Square<int>(x) + Square<int>(y))
+                        * -1.0 / 2.0 / dSigma2);
+            dScale += mWeight.at(i,j);
+            x++;
+        }
+        y++;
+    }
+    mWeight /= dScale;
+
+    // Diff
+    for(i=1;i<nRow - 1;i++)
+    {
+        for(j=1; j<nCol-1; j++)
+        {
+            pixel(j,i).dDx = imgT1.pixel(j+1,i) - imgT1.pixel(j-1,i);
+            pixel(j,i).dDy = imgT1.pixel(j,i+1) - imgT1.pixel(j,i-1);
+            pixel(j,i).dDt = imgT1.pixel(j,i) - imgT0.pixel(j,i);
+            pixel(j,i).dDxDx = pixel(j,i).dDx * pixel(j,i).dDx;
+            pixel(j,i).dDxDy = pixel(j,i).dDx * pixel(j,i).dDy;
+            pixel(j,i).dDyDy = pixel(j,i).dDy * pixel(j,i).dDy;
+            pixel(j,i).dDtDx = pixel(j,i).dDt * pixel(j,i).dDx;
+            pixel(j,i).dDtDy = pixel(j,i).dDt * pixel(j,i).dDy;
+            //qDebug("%.3lf",pixel(j,i).dDt);
+        }
+    }
+
+    /*
+    for(i=0;i<nFull;i++)    // y
+    {
+        for(j=0;j<nFull;j++)    // x
+        {
+            qDebug("%d %d %.3lf",j,i,mWeight.at(i,j));
+    }}
+    */
+
+    SHMatrix<double> mATWA(2,2);
+    SHMatrix<double> mATWAInv(2,2);
+    SHMatrix<double> mATWb(2,1); // row = 2 col = 1
+
+    int nStartX = nHalf + 1; // MaskSize + Diff (1)
+    int nStartY = nHalf + 1;
+    int nEndX = nCol - nHalf - 1;
+    int nEndY = nRow - nHalf - 1;
+
+    for(i=nStartY;i<nEndY;i++)
+    {
+        for(j=nStartX; j<nEndX; j++)
+        {
+            // Calculate AWA, AWb
+            mATWA.at(0,0) = 0.0;
+            mATWA.at(0,1) = 0.0;
+            mATWA.at(1,0) = 0.0;
+            mATWA.at(1,1) = 0.0;
+
+            mATWb.at(0,0) = 0.0;
+            mATWb.at(1,0) = 0.0;
+            y = -nHalf;
+            for(k=0;k<nFull;k++)
+            {
+                x = -nHalf;
+                for(l=0;l<nFull;l++)
+                {
+                    mATWA.at(0,0) += pixel(j+x,i+y).dDxDx * mWeight.at(l,k);
+                    mATWA.at(0,1) += pixel(j+x,i+y).dDxDy * mWeight.at(l,k);
+                    mATWA.at(1,1) += pixel(j+x,i+y).dDyDy * mWeight.at(l,k);
+
+                    mATWb.at(0,0) += pixel(j+x,i+y).dDtDx * mWeight.at(l,k);
+                    mATWb.at(1,0) += pixel(j+x,i+y).dDtDy * mWeight.at(l,k);
+                    //qDebug("%.3lf %.3lf %.3lf",mATWA.at(0,0),mATWA.at(0,1),mATWA.at(1,1));
+                    x++;
+                }
+                mATWA.at(1,0) = mATWA.at(0,1);
+                y++;
+            }
+            //qDebug("%.3lf %.3lf %.3lf",mATWA.at(0,0),mATWA.at(0,1),mATWA.at(1,1));
+
+            // Calculate inverse AWA
+            double dDetATWA = mATWA.at(0,0) * mATWA.at(1,1) - Square(mATWA.at(0,1)); // ad-bc
+            if(abs(dDetATWA) < 0.0001) // a inverse matrix is not exist
+            {
+                pixel(j,i).u = 0.0;
+                pixel(j,i).v = 0.0;
+                continue;
+            }
+            mATWAInv.at(0,0) = mATWA.at(1,1);
+            mATWAInv.at(1,1) = mATWA.at(0,0);
+            mATWAInv.at(0,1) = -mATWA.at(0,1);
+            mATWAInv.at(1,0) = -mATWA.at(1,0);
+            mATWAInv /= dDetATWA;
+
+            // calculate d vector
+            pixel(j,i).u =  mATWAInv.at(0,0) * mATWb.at(0,0) +
+                            mATWAInv.at(0,1) * mATWb.at(1,0);
+            pixel(j,i).v =  mATWAInv.at(1,0) * mATWb.at(0,0) +
+                            mATWAInv.at(1,1) * mATWb.at(1,0);
+
+        }
+    }
+
+}
+
+void SHOpticalFlow::findFlowPyramid(SHImage& imgT0, SHImage& imgT1, int nWindows)
+{
+
+    nCol = imgT0.Col();
+    nRow = imgT0.Row();
+
+    nHalf = nWindows / 2;
+    nFull = nHalf * 2+1;
+    double dSigma = nFull / 2.0;
+
+    int nLegnth = nCol * nRow;
+    SHArray::Create(nLegnth);
+
+    SHGaussianPiramid gpT0(imgT0,dSigma);
+    SHGaussianPiramid gpT1(imgT1,dSigma);
+
+    int nPyramidSize = gpT0.size();
+
+    SHOpticalFlow ofProcessor[gpT0.size()];
+
+    int i,x,y;
+    ofProcessor[nPyramidSize-1].findFlow(gpT0[nPyramidSize-1], gpT1[nPyramidSize-1], nWindows); // Top level
+    for(i=2;i<=nPyramidSize;i++)    // [nPyramidSize - i] -> [nPyramidSize - 1] ... [nPyramidSize - 2] ... [nPyramidSize - 3] ... [0]
+    {
+        ofProcessor[nPyramidSize-i].findFlow(gpT0[nPyramidSize-i], gpT1[nPyramidSize-i], nWindows); // Top level
+        for(y=0; y<ofProcessor[nPyramidSize-i+1].Row(); y++)
+        {
+            for(x=0; x<ofProcessor[nPyramidSize-i+1].Col(); x++)
+            {
+                ofProcessor[nPyramidSize-i].pixel(x*2  ,y*2  ).u += ofProcessor[nPyramidSize-i+1].pixel(x,y).u * 2;
+                ofProcessor[nPyramidSize-i].pixel(x*2+1,y*2  ).u += ofProcessor[nPyramidSize-i+1].pixel(x,y).u * 2;
+                ofProcessor[nPyramidSize-i].pixel(x*2  ,y*2+1).u += ofProcessor[nPyramidSize-i+1].pixel(x,y).u * 2;
+                ofProcessor[nPyramidSize-i].pixel(x*2+1,y*2+1).u += ofProcessor[nPyramidSize-i+1].pixel(x,y).u * 2;
+
+                ofProcessor[nPyramidSize-i].pixel(x*2  ,y*2  ).v += ofProcessor[nPyramidSize-i+1].pixel(x,y).v * 2;
+                ofProcessor[nPyramidSize-i].pixel(x*2+1,y*2  ).v += ofProcessor[nPyramidSize-i+1].pixel(x,y).v * 2;
+                ofProcessor[nPyramidSize-i].pixel(x*2  ,y*2+1).v += ofProcessor[nPyramidSize-i+1].pixel(x,y).v * 2;
+                ofProcessor[nPyramidSize-i].pixel(x*2+1,y*2+1).v += ofProcessor[nPyramidSize-i+1].pixel(x,y).v * 2;
+            }
+        }
+    }
+    for(y=0;y<nRow;y++)
+    {
+        for(x=0;x<nCol;x++)
+        {
+            pixel(x,y).u = ofProcessor[0].pixel(x,y).u;
+            pixel(x,y).v = ofProcessor[0].pixel(x,y).v;
         }
     }
 }
